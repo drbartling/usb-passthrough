@@ -5,7 +5,8 @@ runner = [
     "probe-rs",
     "run",
     "--chip",
-    "STM32G0B1CCTx",
+    "STM32G0B1CCUx",
+    # "STM32G0B1RETx"
     "--log-format",
     "\n{t}\n[{L}] {s}\n{m}::{f}:{l}",
 ]
