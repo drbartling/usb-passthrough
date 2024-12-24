@@ -20,8 +20,8 @@ pub struct Board {
         cdc_acm::Sender<'static, usb::Driver<'static, peripherals::USB>>,
     pub usb_cdc_rx:
         cdc_acm::Receiver<'static, usb::Driver<'static, peripherals::USB>>,
-    pub util_tx_payload_rx: BufferedUartTx<'static>,
-    pub util_rx_payload_tx: BufferedUartRx<'static>,
+    pub uart_tx: BufferedUartTx<'static>,
+    pub uart_rx: BufferedUartRx<'static>,
 }
 
 impl Board {
@@ -62,7 +62,7 @@ impl Board {
             (usb, usb_cdc_tx, usb_cdc_rx)
         };
 
-        let (util_tx_payload_rx, util_rx_payload_tx) = {
+        let (uart_tx, uart_rx) = {
             let uart_tx_buf = Box::leak(Box::new([0u8; 256]));
             let uart_rx_buf = Box::leak(Box::new([0u8; 256]));
 
@@ -97,8 +97,8 @@ impl Board {
             usb,
             usb_cdc_tx,
             usb_cdc_rx,
-            util_tx_payload_rx,
-            util_rx_payload_tx,
+            uart_tx,
+            uart_rx,
         }
     }
 }
