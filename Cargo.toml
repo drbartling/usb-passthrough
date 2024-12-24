@@ -19,6 +19,7 @@ embassy-usb = {git = "https://github.com/embassy-rs/embassy"}
 embedded-alloc = "0.6.0"
 embedded-hal-bus = {version = "0.2.0", features = ["defmt-03", "async"]}
 embedded-io-async = "0.6.1"
+heapless = "0.8.0"
 panic-halt = "1.0.0"
 panic-probe = {version = "0.3.2", features = ["print-defmt"], optional = true}
 portable-atomic = {version = "1.10.0", default-features = false, features = ["require-cas", "unsafe-assume-single-core"]}
