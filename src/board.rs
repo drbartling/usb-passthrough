@@ -68,6 +68,7 @@ impl Board {
 
             let mut config = usart::Config::default();
             config.swap_rx_tx = true;
+            config.baudrate = 9600;
             let uart4 = {
                 BufferedUart::new(
                     p.USART4,

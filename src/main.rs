@@ -115,6 +115,6 @@ async fn payload_to_pc(
 
         let data = &buf[..n];
         info!("To CDC TX {}: {:x}", n, data);
-        usb_cdc_tx.write_packet(&mut buf).await?;
+        usb_cdc_tx.write_packet(data).await?;
     }
 }
