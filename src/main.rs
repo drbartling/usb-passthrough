@@ -86,16 +86,9 @@ async fn usb_to_uart(
         let n = usb_cdc_rx.read_packet(&mut buf).await?;
         let data = &buf[..n];
         info!("To UART TX {}: {:x}", n, data);
-        match uart_tx.write(data).await {
-            Ok(m) => {
-                if m < n {
-                    warn!("USB Received {:?}, UART sent {:?}", n, m);
-                }
-            }
-            Err(e) => {
-                warn!("UART TX err: {:?}", e);
-                return Err(Disconnected {});
-            }
+        if let Err(e) = uart_tx.write_all(data).await {
+            warn!("UART TX err: {:?}", e);
+            return Err(Disconnected {});
         }
     }
 }
@@ -107,7 +100,7 @@ async fn uart_to_usb(
     >,
     uart_rx: &mut BufferedUartRx<'static>,
 ) -> Result<(), Disconnected> {
-    let mut buf = [0; 64];
+    let mut buf = [0; 63];
     loop {
         let n = match uart_rx.read(&mut buf).await {
             Ok(n) => n,
