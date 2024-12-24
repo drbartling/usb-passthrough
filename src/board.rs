@@ -86,11 +86,11 @@ impl Board {
 
         // May want to try adjust interrupts?
         InterruptExt::set_priority(
-            embassy_stm32::interrupt::USART3_4_5_6_LPUART1,
+            interrupt::USART3_4_5_6_LPUART1,
             interrupt::Priority::P0,
         );
         InterruptExt::set_priority(
-            embassy_stm32::interrupt::USB_UCPD1_2,
+            interrupt::USB_UCPD1_2,
             interrupt::Priority::P0,
         );
 

@@ -40,27 +40,27 @@ async fn main(_spawner: Spawner) {
 
     let mut usb_cdc_rx = board.usb_cdc_rx;
     let mut uart_tx = board.uart_tx;
-    let pc_to_payload_fut = async {
+    let usb_to_uart_fut = async {
         loop {
             usb_cdc_rx.wait_connection().await;
             info!("CDC RX Connected");
-            let _ = pc_to_payload(&mut uart_tx, &mut usb_cdc_rx).await;
+            let _ = usb_to_uart(&mut uart_tx, &mut usb_cdc_rx).await;
             info!("CDC RX Disconnected");
         }
     };
 
     let mut usb_cdc_tx = board.usb_cdc_tx;
     let mut uart_rx = board.uart_rx;
-    let payload_to_pc_fut = async {
+    let uart_to_usb_fut = async {
         loop {
             usb_cdc_tx.wait_connection().await;
             info!("CDC TX Connected");
-            let _ = payload_to_pc(&mut usb_cdc_tx, &mut uart_rx).await;
+            let _ = uart_to_usb(&mut usb_cdc_tx, &mut uart_rx).await;
             info!("CDC TX Disconnected");
         }
     };
 
-    join3(usb_fut, pc_to_payload_fut, payload_to_pc_fut).await;
+    join3(usb_fut, usb_to_uart_fut, uart_to_usb_fut).await;
 }
 
 struct Disconnected {}
@@ -74,7 +74,7 @@ impl From<EndpointError> for Disconnected {
     }
 }
 
-async fn pc_to_payload(
+async fn usb_to_uart(
     uart_tx: &mut BufferedUartTx<'static>,
     usb_cdc_rx: &mut cdc_acm::Receiver<
         'static,
@@ -87,7 +87,11 @@ async fn pc_to_payload(
         let data = &buf[..n];
         info!("To UART TX {}: {:x}", n, data);
         match uart_tx.write(data).await {
-            Ok(_n) => {}
+            Ok(m) => {
+                if m < n {
+                    warn!("USB Received {:?}, UART sent {:?}", n, m);
+                }
+            }
             Err(e) => {
                 warn!("UART TX err: {:?}", e);
                 return Err(Disconnected {});
@@ -96,7 +100,7 @@ async fn pc_to_payload(
     }
 }
 
-async fn payload_to_pc(
+async fn uart_to_usb(
     usb_cdc_tx: &mut cdc_acm::Sender<
         'static,
         usb::Driver<'static, peripherals::USB>,
