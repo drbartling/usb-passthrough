@@ -4,7 +4,12 @@ Example of creating a USB to UART bridge using Embassy
 
 ## About
 
-It's still a work in progress.  The UART overflows.
+A simple USB to UART bridge using Embassy.  Demonstrates splitting peripherals
+into senders and receivers.  Using DMA to prevent buffer overruns on UART since
+the STM32G0 parts can only buffer a single byte without DMA.
+
+Not yet complete, since right now the UART is fixed at 115_200 bps, and so if
+you use this with a computer to set the baudrate, it will fail.
 
 You can build and run this on a NUCLEO-G0B1RE with a few small modifications:
 

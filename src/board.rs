@@ -1,6 +1,7 @@
+#[cfg(feature = "defmt")]
+use defmt::assert_eq;
+
 use alloc::boxed::Box;
-use embassy_stm32::interrupt;
-use embassy_stm32::interrupt::InterruptExt;
 use embassy_stm32::mode::Async;
 use embassy_stm32::rcc::Sysclk;
 use embassy_stm32::usart::{RingBufferedUartRx, Uart, UartTx};
@@ -30,12 +31,12 @@ impl Board {
         let p = {
             let mut config = embassy_stm32::Config::default();
             let pll_config = embassy_stm32::rcc::Pll {
-                mul: embassy_stm32::rcc::PllMul::MUL16,
-                divp: Some(embassy_stm32::rcc::PllPDiv::DIV2),
-                divr: Some(embassy_stm32::rcc::PllRDiv::DIV2),
-                divq: Some(embassy_stm32::rcc::PllQDiv::DIV2),
-                prediv: embassy_stm32::rcc::PllPreDiv::DIV2,
-                source: embassy_stm32::rcc::PllSource::HSI,
+                source: embassy_stm32::rcc::PllSource::HSI, // HSI (16MHz)
+                prediv: embassy_stm32::rcc::PllPreDiv::DIV1, // 16 MHz
+                mul: embassy_stm32::rcc::PllMul::MUL8,      // 128 Mhz
+                divr: Some(embassy_stm32::rcc::PllRDiv::DIV2), // 64 MHz
+                divq: Some(embassy_stm32::rcc::PllQDiv::DIV2), // 64 MHz
+                divp: Some(embassy_stm32::rcc::PllPDiv::DIV2), // 64 MHz
             };
             config.rcc.pll = Some(pll_config);
             config.rcc.sys = Sysclk::PLL1_R;
@@ -44,7 +45,15 @@ impl Board {
 
         let (usb, usb_cdc_tx, usb_cdc_rx) = {
             let driver = usb::Driver::new(p.USB, Irqs, p.PA12, p.PA11);
+
+            // Generic VID and PID for development
             let config = embassy_usb::Config::new(0xc0de, 0xcafe);
+            let max_packet_size = config.max_packet_size_0 as u16;
+            #[cfg(feature = "defmt")]
+            assert_eq!(max_packet_size, 64);
+
+            // Buffers based on embassy examples
+            // Box::leak ensures we get a static lifetime
             let config_descriptor = Box::leak(Box::new([0u8; 256]));
             let bos_descriptor = Box::leak(Box::new([0u8; 256]));
             let control_buf = Box::leak(Box::new([0u8; 7]));
@@ -57,7 +66,7 @@ impl Board {
                 &mut [], // no msos descriptors
                 control_buf,
             );
-            let class = CdcAcmClass::new(&mut builder, state, 64);
+            let class = CdcAcmClass::new(&mut builder, state, max_packet_size);
             let (usb_cdc_tx, usb_cdc_rx) = class.split();
             let usb = builder.build();
             (usb, usb_cdc_tx, usb_cdc_rx)
@@ -78,16 +87,6 @@ impl Board {
             let uart_rx = uart_rx.into_ring_buffered(rx_buf);
             (uart_tx, uart_rx)
         };
-
-        // May want to try adjust interrupts?
-        InterruptExt::set_priority(
-            interrupt::USART3_4_5_6_LPUART1,
-            interrupt::Priority::P0,
-        );
-        InterruptExt::set_priority(
-            interrupt::USB_UCPD1_2,
-            interrupt::Priority::P1,
-        );
 
         Self {
             usb,
