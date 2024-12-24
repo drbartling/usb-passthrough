@@ -1,8 +1,9 @@
 use alloc::boxed::Box;
 use embassy_stm32::interrupt;
 use embassy_stm32::interrupt::InterruptExt;
+use embassy_stm32::mode::Async;
 use embassy_stm32::rcc::Sysclk;
-use embassy_stm32::usart::{BufferedUart, BufferedUartRx, BufferedUartTx};
+use embassy_stm32::usart::{RingBufferedUartRx, Uart, UartTx};
 use embassy_stm32::{bind_interrupts, usart};
 use embassy_stm32::{peripherals, usb};
 use embassy_usb::class::cdc_acm;
@@ -10,7 +11,7 @@ use embassy_usb::class::cdc_acm::CdcAcmClass;
 use embassy_usb::{Builder, UsbDevice};
 
 bind_interrupts!(struct Irqs {
-    USART3_4_5_6_LPUART1 => usart::BufferedInterruptHandler<peripherals::USART4>;
+    USART3_4_5_6_LPUART1 => usart::InterruptHandler<peripherals::USART4>;
     USB_UCPD1_2 => usb::InterruptHandler<peripherals::USB>;
 });
 
@@ -20,8 +21,8 @@ pub struct Board {
         cdc_acm::Sender<'static, usb::Driver<'static, peripherals::USB>>,
     pub usb_cdc_rx:
         cdc_acm::Receiver<'static, usb::Driver<'static, peripherals::USB>>,
-    pub uart_tx: BufferedUartTx<'static>,
-    pub uart_rx: BufferedUartRx<'static>,
+    pub uart_tx: UartTx<'static, Async>,
+    pub uart_rx: RingBufferedUartRx<'static>,
 }
 
 impl Board {
@@ -63,25 +64,19 @@ impl Board {
         };
 
         let (uart_tx, uart_rx) = {
-            let uart_tx_buf = Box::leak(Box::new([0u8; 256]));
-            let uart_rx_buf = Box::leak(Box::new([0u8; 256]));
-
             let mut config = usart::Config::default();
             config.swap_rx_tx = true;
-            config.baudrate = 9600;
             let uart4 = {
-                BufferedUart::new(
-                    p.USART4,
-                    Irqs,
-                    p.PA1,
-                    p.PA0,
-                    uart_tx_buf,
-                    uart_rx_buf,
+                Uart::new(
+                    p.USART4, p.PA1, p.PA0, Irqs, p.DMA1_CH2, p.DMA1_CH3,
                     config,
                 )
                 .unwrap()
             };
-            uart4.split()
+            let (uart_tx, uart_rx) = uart4.split();
+            let rx_buf = Box::leak(Box::new([0u8; 64]));
+            let uart_rx = uart_rx.into_ring_buffered(rx_buf);
+            (uart_tx, uart_rx)
         };
 
         // May want to try adjust interrupts?
@@ -91,7 +86,7 @@ impl Board {
         );
         InterruptExt::set_priority(
             interrupt::USB_UCPD1_2,
-            interrupt::Priority::P0,
+            interrupt::Priority::P1,
         );
 
         Self {

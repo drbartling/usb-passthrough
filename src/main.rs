@@ -14,13 +14,14 @@ use core::ptr::addr_of_mut;
 use defmt::{panic, *};
 use embassy_executor::Spawner;
 use embassy_futures::join::join3;
+use embassy_stm32::mode::Async;
 use embassy_stm32::peripherals;
-use embassy_stm32::usart::{BufferedUartRx, BufferedUartTx};
+use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
 use embassy_stm32::usb;
 use embassy_usb::class::cdc_acm;
 use embassy_usb::driver::EndpointError;
 use embedded_alloc::LlffHeap as Heap;
-use embedded_io_async::{Read, Write};
+use embedded_io_async::Write;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -75,7 +76,7 @@ impl From<EndpointError> for Disconnected {
 }
 
 async fn usb_to_uart(
-    uart_tx: &mut BufferedUartTx<'static>,
+    uart_tx: &mut UartTx<'static, Async>,
     usb_cdc_rx: &mut cdc_acm::Receiver<
         'static,
         usb::Driver<'static, peripherals::USB>,
@@ -98,7 +99,7 @@ async fn uart_to_usb(
         'static,
         usb::Driver<'static, peripherals::USB>,
     >,
-    uart_rx: &mut BufferedUartRx<'static>,
+    uart_rx: &mut RingBufferedUartRx<'static>,
 ) -> Result<(), Disconnected> {
     let mut buf = [0; 63];
     loop {
