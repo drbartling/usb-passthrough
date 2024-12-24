@@ -5,7 +5,7 @@ extern crate alloc;
 mod board;
 
 #[cfg(feature = "defmt")]
-use defmt::{assert_eq, info, panic, unwrap, warn};
+use defmt::{assert_eq, info, panic, warn};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 #[cfg(feature = "defmt")]
@@ -41,11 +41,11 @@ async fn main(spawner: Spawner) {
 
     let uart_tx = board.uart_tx;
     let usb_cdc_rx = board.usb_cdc_rx;
-    spawner.spawn(usb_to_uart(uart_tx, usb_cdc_rx)).unwrap();
+    spawner.must_spawn(usb_to_uart(uart_tx, usb_cdc_rx));
 
     let usb_cdc_tx = board.usb_cdc_tx;
     let uart_rx = board.uart_rx;
-    spawner.spawn(uart_to_usb(usb_cdc_tx, uart_rx)).unwrap();
+    spawner.must_spawn(uart_to_usb(usb_cdc_tx, uart_rx));
 
     loop {
         usb_fut.await;
