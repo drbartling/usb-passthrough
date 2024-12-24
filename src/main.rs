@@ -5,7 +5,7 @@ extern crate alloc;
 mod board;
 
 #[cfg(feature = "defmt")]
-use defmt::{assert_eq, info, panic, warn};
+use defmt::{assert_eq, info, panic, unwrap, warn};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 #[cfg(feature = "defmt")]
@@ -14,7 +14,6 @@ use {defmt_rtt as _, panic_probe as _};
 use board::Board;
 use core::ptr::addr_of_mut;
 use embassy_executor::Spawner;
-use embassy_futures::join::join3;
 use embassy_stm32::mode::Async;
 use embassy_stm32::peripherals;
 use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
@@ -28,7 +27,7 @@ use embedded_io_async::Write;
 static HEAP: Heap = Heap::empty();
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     {
         use core::mem::MaybeUninit;
         const HEAP_SIZE: usize = 2048;
@@ -40,33 +39,17 @@ async fn main(_spawner: Spawner) {
     let mut usb = board.usb;
     let usb_fut = usb.run();
 
-    let mut usb_cdc_rx = board.usb_cdc_rx;
-    let mut uart_tx = board.uart_tx;
-    let usb_to_uart_fut = async {
-        loop {
-            usb_cdc_rx.wait_connection().await;
-            #[cfg(feature = "defmt")]
-            info!("CDC RX Connected");
-            let _ = usb_to_uart(&mut uart_tx, &mut usb_cdc_rx).await;
-            #[cfg(feature = "defmt")]
-            info!("CDC RX Disconnected");
-        }
-    };
+    let uart_tx = board.uart_tx;
+    let usb_cdc_rx = board.usb_cdc_rx;
+    spawner.spawn(usb_to_uart(uart_tx, usb_cdc_rx)).unwrap();
 
-    let mut usb_cdc_tx = board.usb_cdc_tx;
-    let mut uart_rx = board.uart_rx;
-    let uart_to_usb_fut = async {
-        loop {
-            usb_cdc_tx.wait_connection().await;
-            #[cfg(feature = "defmt")]
-            info!("CDC TX Connected");
-            let _ = uart_to_usb(&mut usb_cdc_tx, &mut uart_rx).await;
-            #[cfg(feature = "defmt")]
-            info!("CDC TX Disconnected");
-        }
-    };
+    let usb_cdc_tx = board.usb_cdc_tx;
+    let uart_rx = board.uart_rx;
+    spawner.spawn(uart_to_usb(usb_cdc_tx, uart_rx)).unwrap();
 
-    join3(usb_fut, usb_to_uart_fut, uart_to_usb_fut).await;
+    loop {
+        usb_fut.await;
+    }
 }
 
 struct Disconnected {}
@@ -80,58 +63,80 @@ impl From<EndpointError> for Disconnected {
     }
 }
 
+#[embassy_executor::task]
 async fn usb_to_uart(
-    uart_tx: &mut UartTx<'static, Async>,
-    usb_cdc_rx: &mut cdc_acm::Receiver<
+    mut uart_tx: UartTx<'static, Async>,
+    mut usb_cdc_rx: cdc_acm::Receiver<
         'static,
         usb::Driver<'static, peripherals::USB>,
     >,
-) -> Result<(), Disconnected> {
+) {
     // Default packet size is 64
     #[cfg(feature = "defmt")]
     assert_eq!(64, usb_cdc_rx.max_packet_size());
-    let mut buf = [0; 64];
     loop {
-        let n = usb_cdc_rx.read_packet(&mut buf).await?;
-        let data = &buf[..n];
+        usb_cdc_rx.wait_connection().await;
         #[cfg(feature = "defmt")]
-        info!("To UART TX {}: {:x}", n, data);
-        #[allow(unused_variables)]
-        if let Err(e) = uart_tx.write_all(data).await {
-            #[cfg(feature = "defmt")]
-            warn!("UART TX err: {:?}", e);
-            return Err(Disconnected {});
+        info!("CDC RX Connected");
+        let mut buf = [0; 64];
+        loop {
+            if let Ok(n) = usb_cdc_rx.read_packet(&mut buf).await {
+                let data = &buf[..n];
+                #[cfg(feature = "defmt")]
+                info!("To UART TX {}: {:x}", n, data);
+                #[allow(unused_variables)]
+                if let Err(e) = uart_tx.write_all(data).await {
+                    #[cfg(feature = "defmt")]
+                    warn!("UART TX err: {:?}", e);
+                    break;
+                }
+            }
         }
+        #[cfg(feature = "defmt")]
+        warn!("CDC RX Disconnected");
     }
 }
 
+#[embassy_executor::task]
 async fn uart_to_usb(
-    usb_cdc_tx: &mut cdc_acm::Sender<
+    mut usb_cdc_tx: cdc_acm::Sender<
         'static,
         usb::Driver<'static, peripherals::USB>,
     >,
-    uart_rx: &mut RingBufferedUartRx<'static>,
-) -> Result<(), Disconnected> {
+    mut uart_rx: RingBufferedUartRx<'static>,
+) {
     // Default packet size is 64
     #[cfg(feature = "defmt")]
-    assert_eq!(usb_cdc_tx.max_packet_size(), 64);
-    // Send a max of 1 less than USB max packet size
-    // If we send 64, the USB driver expects more to follow
-    let mut buf = [0; 63];
+    assert_eq!(64, usb_cdc_tx.max_packet_size());
     loop {
-        let n = match uart_rx.read(&mut buf).await {
-            Ok(n) => n,
-            #[allow(unused_variables)]
-            Err(e) => {
-                #[cfg(feature = "defmt")]
-                warn!("UART RX err: {:?}", e);
-                return Err(Disconnected {});
-            }
-        };
-
-        let data = &buf[..n];
+        usb_cdc_tx.wait_connection().await;
         #[cfg(feature = "defmt")]
-        info!("To CDC TX {}: {:x}", n, data);
-        usb_cdc_tx.write_packet(data).await?;
+        info!("CDC TX Connected");
+
+        // Send a max of 1 less than USB max packet size
+        // If we send 64, the USB driver expects more to follow
+        let mut buf = [0; 63];
+        loop {
+            let n = match uart_rx.read(&mut buf).await {
+                Ok(n) => n,
+                #[allow(unused_variables)]
+                Err(e) => {
+                    #[cfg(feature = "defmt")]
+                    warn!("UART RX err: {:?}", e);
+                    break;
+                }
+            };
+
+            let data = &buf[..n];
+            #[cfg(feature = "defmt")]
+            info!("To CDC TX {}: {:x}", n, data);
+            if let Err(e) = usb_cdc_tx.write_packet(data).await {
+                #[cfg(feature = "defmt")]
+                warn!("CDC TX err: {:?}", e);
+                break;
+            }
+        }
+        #[cfg(feature = "defmt")]
+        warn!("CDC TX Disconnected");
     }
 }
