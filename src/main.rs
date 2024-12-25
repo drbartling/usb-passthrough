@@ -49,7 +49,7 @@ static TO_UART: ToUartChannel = PubSubChannel::new();
 async fn main(spawner: Spawner) {
     {
         use core::mem::MaybeUninit;
-        const HEAP_SIZE: usize = 2048;
+        const HEAP_SIZE: usize = 10 * 1024;
         static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] =
             [MaybeUninit::uninit(); HEAP_SIZE];
         unsafe { HEAP.init(addr_of_mut!(HEAP_MEM) as usize, HEAP_SIZE) }

@@ -74,6 +74,7 @@ impl Board {
 
         let (uart_tx, uart_rx) = {
             let mut config = usart::Config::default();
+            config.baudrate = 115200;
             config.swap_rx_tx = true;
             let uart4 = {
                 Uart::new(
@@ -83,7 +84,7 @@ impl Board {
                 .unwrap()
             };
             let (uart_tx, uart_rx) = uart4.split();
-            let rx_buf = Box::leak(Box::new([0u8; 64]));
+            let rx_buf = Box::leak(Box::new([0u8; 4096]));
             let uart_rx = uart_rx.into_ring_buffered(rx_buf);
             (uart_tx, uart_rx)
         };
