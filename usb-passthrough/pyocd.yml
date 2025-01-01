@@ -1,0 +1,2 @@
+target_override: STM32G0B1CCUx
+# target_override: STM32G0B1RETx
