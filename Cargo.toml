@@ -42,6 +42,7 @@ debug = [
     "embassy-time/defmt-timestamp-uptime",
     "embassy-stm32/defmt",
 ]
+std = []
 
 [profile.release]
 opt-level = "z"
