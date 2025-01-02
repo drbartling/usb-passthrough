@@ -12,20 +12,25 @@
 // This however creates problems since there's no signaling of when things change, and so we must
 // ensure each thread awaits at the appropriate time allowing control to handoff to another thread.
 
-use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::exti::ExtiInput;
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_time::{Duration, Timer};
-use {defmt_rtt as _, panic_probe as _};
+use panic_halt as _;
 
 static mut PRESS_COUNTER: i32 = 0;
+async fn update_press_counter() {
+    unsafe { PRESS_COUNTER += 1 };
+    Timer::after(Duration::MIN).await;
+}
+async fn read_press_counter() -> i32 {
+    Timer::after(Duration::MIN).await;
+    unsafe { PRESS_COUNTER }
+}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(Default::default());
-
-    info!("Reset");
 
     let led_pin = Output::new(p.PA5, Level::High, Speed::Low);
     let led = Led { led_pin };
@@ -42,8 +47,7 @@ async fn main(spawner: Spawner) {
 #[embassy_executor::task]
 async fn led_handler(mut led: Led) {
     loop {
-        Timer::after(Duration::MIN).await;
-        let press_counter = unsafe { PRESS_COUNTER };
+        let press_counter = read_press_counter().await;
         if 0 == press_counter % 2 {
             led.off();
         } else {
@@ -69,6 +73,6 @@ impl Led {
 async fn button_handler(mut button: ExtiInput<'static>) {
     loop {
         button.wait_for_falling_edge().await;
-        unsafe { PRESS_COUNTER += 1 };
+        update_press_counter().await;
     }
 }

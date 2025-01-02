@@ -676,6 +676,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "led-toggle"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "crc",
+ "defmt",
+ "defmt-rtt",
+ "embassy-embedded-hal",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-stm32",
+ "embassy-sync",
+ "embassy-time",
+ "embassy-usb",
+ "embedded-alloc",
+ "embedded-hal-bus",
+ "embedded-io-async",
+ "heapless 0.8.0",
+ "panic-halt",
+ "panic-probe",
+ "portable-atomic",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.169"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1043,33 +1070,6 @@ checksum = "98816b1accafbb09085168b90f27e93d790b4bfa19d883466b5e53315b5f06a6"
 dependencies = [
  "heapless 0.8.0",
  "portable-atomic",
-]
-
-[[package]]
-name = "usb-passthrough"
-version = "0.1.0"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "crc",
- "defmt",
- "defmt-rtt",
- "embassy-embedded-hal",
- "embassy-executor",
- "embassy-futures",
- "embassy-stm32",
- "embassy-sync",
- "embassy-time",
- "embassy-usb",
- "embedded-alloc",
- "embedded-hal-bus",
- "embedded-io-async",
- "heapless 0.8.0",
- "panic-halt",
- "panic-probe",
- "portable-atomic",
- "postcard",
- "serde",
 ]
 
 [[package]]
