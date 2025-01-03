@@ -5,7 +5,7 @@ extern crate alloc;
 mod board;
 
 #[cfg(feature = "defmt")]
-use defmt::{error, info};
+use defmt::{error};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 #[cfg(feature = "defmt")]
@@ -134,8 +134,6 @@ async fn usb_to_uart(
             if let Ok(n) = cdc_rx.read_packet(&mut buf).await {
                 usb_rx_state_set(UsbRxState::Receiving).await;
                 let data = &buf[..n];
-                #[cfg(feature = "defmt")]
-                info!("USB to UART {}: {:x}", n, data);
                 uart_tx_state_set(UartTxState::Transmitting).await;
                 if let Err(e) = uart_tx.write_all(data).await {
                     #[cfg(feature = "defmt")]
@@ -176,11 +174,9 @@ async fn uart_to_usb(
                 Ok(n) => {
                     uart_rx_state_set(UartRxState::Receiving).await;
                     let data = &buf[..n];
-                    #[cfg(feature = "defmt")]
-                    info!("UART to USB {}: {:x}", n, data);
 
                     usb_tx_state_set(UsbTxState::Transmitting).await;
-                    if let Err(e) = cdc_tx.write_packet(&buf).await {
+                    if let Err(e) = cdc_tx.write_packet(data).await {
                         #[cfg(feature = "defmt")]
                         error!("CDC TX err: {:?}", e);
                         break;
