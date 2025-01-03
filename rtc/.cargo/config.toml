@@ -1,0 +1,22 @@
+# This file was automatically generated.
+
+[target.thumbv6m-none-eabi]
+runner = [
+    "probe-rs",
+    "run",
+    "--chip",
+    "STM32G0B1CCUx",
+    # "STM32G0B1RETx"
+    "--log-format",
+    "\n{t}\n[{L}] {s}\n{m}::{f}:{l}",
+]
+
+[build]
+target = "thumbv6m-none-eabi"
+
+[env]
+DEFMT_LOG = "info"
+
+[unstable]
+build-std = ["core"]
+build-std-features = ["panic_immediate_abort"]
