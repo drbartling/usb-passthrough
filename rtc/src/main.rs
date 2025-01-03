@@ -34,7 +34,7 @@ async fn main(_spawner: Spawner) {
     }
 
     loop {
-        let now: DateTime = rtc.now().unwrap().into();
+        let now: DateTime = rtc.now().unwrap();
         info!("{}:{}:{}", now.hour(), now.minute(), now.second());
 
         let now = chrono::NaiveDateTime::from(now);
