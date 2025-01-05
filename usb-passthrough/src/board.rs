@@ -1,18 +1,18 @@
 #[cfg(feature = "defmt")]
 use defmt::assert_eq;
 
-use embassy_stm32::mode::Async;
+use embassy_stm32::interrupt;
 use embassy_stm32::rcc::Sysclk;
-use embassy_stm32::usart::{RingBufferedUartRx, Uart, UartTx};
-use embassy_stm32::{bind_interrupts, usart};
-use embassy_stm32::{peripherals, usb};
+use embassy_stm32::usart::{BufferedUart, BufferedUartRx, BufferedUartTx};
+use embassy_stm32::{bind_interrupts, peripherals, usart, usb};
+use embassy_stm32::interrupt::{InterruptExt, Priority};
 use embassy_usb::class::cdc_acm;
 use embassy_usb::class::cdc_acm::CdcAcmClass;
 use embassy_usb::{Builder, UsbDevice};
 use static_cell::StaticCell;
 
 bind_interrupts!(struct Irqs {
-    USART3_4_5_6_LPUART1 => usart::InterruptHandler<peripherals::USART4>;
+    USART3_4_5_6_LPUART1 => usart::BufferedInterruptHandler<peripherals::USART4>;
     USB_UCPD1_2 => usb::InterruptHandler<peripherals::USB>;
 });
 
@@ -29,8 +29,8 @@ pub struct Board {
         cdc_acm::Sender<'static, usb::Driver<'static, peripherals::USB>>,
     pub usb_cdc_rx:
         cdc_acm::Receiver<'static, usb::Driver<'static, peripherals::USB>>,
-    pub uart_tx: UartTx<'static, Async>,
-    pub uart_rx: RingBufferedUartRx<'static>,
+    pub uart_tx: BufferedUartTx<'static>,
+    pub uart_rx: BufferedUartRx<'static>,
 }
 
 impl Board {
@@ -49,6 +49,8 @@ impl Board {
             config.rcc.sys = Sysclk::PLL1_R;
             embassy_stm32::init(config)
         };
+        interrupt::USB_UCPD1_2.set_priority(Priority::P4);
+        interrupt::USART3_4_5_6_LPUART1.set_priority(Priority::P0);
 
         let (usb, usb_cdc_tx, usb_cdc_rx) = {
             let driver = usb::Driver::new(p.USB, Irqs, p.PA12, p.PA11);
@@ -81,16 +83,15 @@ impl Board {
             let mut config = usart::Config::default();
             config.baudrate = 115_200;
             config.swap_rx_tx = true;
+            let tx_buf = static_mut_ref!([u8; 256], [0; 256]);
+            let rx_buf = static_mut_ref!([u8; 256], [0; 256]);
             let uart4 = {
-                Uart::new(
-                    p.USART4, p.PA1, p.PA0, Irqs, p.DMA1_CH2, p.DMA1_CH3,
-                    config,
+                BufferedUart::new(
+                    p.USART4, Irqs, p.PA1, p.PA0, tx_buf, rx_buf, config,
                 )
                 .unwrap()
             };
             let (uart_tx, uart_rx) = uart4.split();
-            let rx_buf = static_mut_ref!([u8; 256], [0; 256]);
-            let uart_rx = uart_rx.into_ring_buffered(rx_buf);
             (uart_tx, uart_rx)
         };
 
