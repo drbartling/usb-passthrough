@@ -16,6 +16,13 @@ bind_interrupts!(struct Irqs {
     USB_UCPD1_2 => usb::InterruptHandler<peripherals::USB>;
 });
 
+macro_rules! static_mut_ref {
+    ($t:ty, $i:expr) => {{
+        static CELL: StaticCell<$t> = StaticCell::new();
+        CELL.init($i)
+    }};
+}
+
 pub struct Board {
     pub usb: UsbDevice<'static, usb::Driver<'static, peripherals::USB>>,
     pub usb_cdc_tx:
@@ -52,14 +59,10 @@ impl Board {
             #[cfg(feature = "defmt")]
             assert_eq!(max_packet_size, 64);
 
-            static CONFIG_BUF: StaticCell<[u8; 256]> = StaticCell::new();
-            let config_descriptor = CONFIG_BUF.init([0u8; 256]);
-            static BOS_BUF: StaticCell<[u8; 256]> = StaticCell::new();
-            let bos_descriptor = BOS_BUF.init([0u8; 256]);
-            static CONTROL_BUF: StaticCell<[u8; 7]> = StaticCell::new();
-            let control_buf = CONTROL_BUF.init([0u8; 7]);
-            static CDC_STATE: StaticCell<cdc_acm::State> = StaticCell::new();
-            let state = CDC_STATE.init(cdc_acm::State::new());
+            let config_descriptor = static_mut_ref!([u8; 256], [0; 256]);
+            let bos_descriptor = static_mut_ref!([u8; 256], [0; 256]);
+            let control_buf = static_mut_ref!([u8; 7], [0; 7]);
+            let state = static_mut_ref!(cdc_acm::State, cdc_acm::State::new());
             let mut builder = Builder::new(
                 driver,
                 config,
@@ -86,8 +89,7 @@ impl Board {
                 .unwrap()
             };
             let (uart_tx, uart_rx) = uart4.split();
-            static RX_BUFF: StaticCell<[u8; 256]> = StaticCell::new();
-            let rx_buf = RX_BUFF.init([0u8; 256]);
+            let rx_buf = static_mut_ref!([u8; 256], [0; 256]);
             let uart_rx = uart_rx.into_ring_buffered(rx_buf);
             (uart_tx, uart_rx)
         };
