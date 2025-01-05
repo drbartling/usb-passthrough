@@ -1,7 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![no_main]
 
-extern crate alloc;
 mod board;
 
 #[cfg(feature = "defmt")]
@@ -12,7 +11,6 @@ use panic_halt as _;
 use {defmt_rtt as _, panic_probe as _};
 
 use board::Board;
-use core::ptr::addr_of_mut;
 use embassy_executor::Spawner;
 use embassy_stm32::mode::Async;
 use embassy_stm32::peripherals;
@@ -20,14 +18,9 @@ use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
 use embassy_stm32::usb;
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::pubsub::{PubSubChannel, Publisher, Subscriber, WaitResult};
-use embassy_time::{Duration, Timer};
 use embassy_usb::class::cdc_acm;
-use embedded_alloc::LlffHeap as Heap;
 use embedded_io_async::Write;
 use heapless::Vec;
-
-#[global_allocator]
-static HEAP: Heap = Heap::empty();
 
 type ToUsbBuf = Vec<u8, 63>;
 type ToUsbChannel = PubSubChannel<ThreadModeRawMutex, ToUsbBuf, 4, 1, 1>;
@@ -39,13 +32,6 @@ static TO_USB: ToUsbChannel = PubSubChannel::new();
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    {
-        use core::mem::MaybeUninit;
-        const HEAP_SIZE: usize = 10 * 1024;
-        static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] =
-            [MaybeUninit::uninit(); HEAP_SIZE];
-        unsafe { HEAP.init(addr_of_mut!(HEAP_MEM) as usize, HEAP_SIZE) }
-    }
     let board = Board::new();
 
     let uart_tx = board.uart_tx;

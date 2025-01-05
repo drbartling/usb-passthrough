@@ -1,8 +1,6 @@
 #[cfg(feature = "defmt")]
 use defmt::assert_eq;
 
-use alloc::boxed::Box;
-use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::mode::Async;
 use embassy_stm32::rcc::Sysclk;
 use embassy_stm32::usart::{RingBufferedUartRx, Uart, UartTx};
@@ -11,6 +9,7 @@ use embassy_stm32::{peripherals, usb};
 use embassy_usb::class::cdc_acm;
 use embassy_usb::class::cdc_acm::CdcAcmClass;
 use embassy_usb::{Builder, UsbDevice};
+use static_cell::StaticCell;
 
 bind_interrupts!(struct Irqs {
     USART3_4_5_6_LPUART1 => usart::InterruptHandler<peripherals::USART4>;
@@ -53,12 +52,14 @@ impl Board {
             #[cfg(feature = "defmt")]
             assert_eq!(max_packet_size, 64);
 
-            // Buffers based on embassy examples
-            // Box::leak ensures we get a static lifetime
-            let config_descriptor = Box::leak(Box::new([0u8; 256]));
-            let bos_descriptor = Box::leak(Box::new([0u8; 256]));
-            let control_buf = Box::leak(Box::new([0u8; 7]));
-            let state = Box::leak(Box::new(cdc_acm::State::new()));
+            static CONFIG_BUF: StaticCell<[u8; 256]> = StaticCell::new();
+            let config_descriptor = CONFIG_BUF.init([0u8; 256]);
+            static BOS_BUF: StaticCell<[u8; 256]> = StaticCell::new();
+            let bos_descriptor = BOS_BUF.init([0u8; 256]);
+            static CONTROL_BUF: StaticCell<[u8; 7]> = StaticCell::new();
+            let control_buf = CONTROL_BUF.init([0u8; 7]);
+            static CDC_STATE: StaticCell<cdc_acm::State> = StaticCell::new();
+            let state = CDC_STATE.init(cdc_acm::State::new());
             let mut builder = Builder::new(
                 driver,
                 config,
@@ -85,7 +86,8 @@ impl Board {
                 .unwrap()
             };
             let (uart_tx, uart_rx) = uart4.split();
-            let rx_buf = Box::leak(Box::new([0u8; 256]));
+            static RX_BUFF: StaticCell<[u8; 256]> = StaticCell::new();
+            let rx_buf = RX_BUFF.init([0u8; 256]);
             let uart_rx = uart_rx.into_ring_buffered(rx_buf);
             (uart_tx, uart_rx)
         };
