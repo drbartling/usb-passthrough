@@ -12,13 +12,14 @@ use {defmt_rtt as _, panic_probe as _};
 
 use board::Board;
 use embassy_executor::Spawner;
+use embassy_stm32::mode::Async;
 use embassy_stm32::peripherals;
-use embassy_stm32::usart::{BufferedUartRx, BufferedUartTx};
+use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
 use embassy_stm32::usb;
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::pubsub::{PubSubChannel, Publisher, Subscriber, WaitResult};
 use embassy_usb::class::cdc_acm;
-use embedded_io_async::{Write, Read};
+use embedded_io_async::Write;
 use heapless::Vec;
 
 type ToUsbBuf = Vec<u8, 63>;
@@ -65,7 +66,7 @@ async fn main(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn uart_sender(
-    mut uart_tx: BufferedUartTx<'static>,
+    mut uart_tx: UartTx<'static, Async>,
     mut to_uart_sub: ToUartChannelSubscriber,
 ) {
     loop {
@@ -87,7 +88,7 @@ async fn uart_sender(
 }
 #[embassy_executor::task]
 async fn uart_receiver(
-    mut uart_rx: BufferedUartRx<'static>,
+    mut uart_rx: RingBufferedUartRx<'static>,
     to_usb_pub: ToUsbChannelPublisher,
 ) {
     let mut buf = [0; 63];
