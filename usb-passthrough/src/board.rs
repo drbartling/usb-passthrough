@@ -25,7 +25,6 @@ pub struct Board {
         cdc_acm::Receiver<'static, usb::Driver<'static, peripherals::USB>>,
     pub uart_tx: UartTx<'static, Async>,
     pub uart_rx: RingBufferedUartRx<'static>,
-    pub led: Led,
 }
 
 impl Board {
@@ -91,29 +90,12 @@ impl Board {
             (uart_tx, uart_rx)
         };
 
-        let led_pin = Output::new(p.PD0, Level::High, Speed::Low);
-        let led = Led { led_pin };
-
         Self {
             usb,
             usb_cdc_tx,
             usb_cdc_rx,
             uart_tx,
             uart_rx,
-            led,
         }
-    }
-}
-
-pub struct Led {
-    led_pin: Output<'static>,
-}
-
-impl Led {
-    pub fn on(&mut self) {
-        self.led_pin.set_low();
-    }
-    pub fn off(&mut self) {
-        self.led_pin.set_high();
     }
 }
