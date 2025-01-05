@@ -6,7 +6,6 @@ mod board;
 
 #[cfg(feature = "defmt")]
 use defmt::error;
-use defmt::info;
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 #[cfg(feature = "defmt")]
@@ -19,7 +18,6 @@ use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
 use embassy_stm32::{peripherals, usb};
 use embassy_sync::blocking_mutex::raw::{NoopRawMutex, ThreadModeRawMutex};
 use embassy_sync::pipe;
-use embassy_sync::pipe::{Reader, Writer};
 use embassy_sync::pubsub::{PubSubChannel, Publisher, Subscriber, WaitResult};
 use embassy_usb::class::cdc_acm;
 use embedded_io_async::Write;
@@ -42,10 +40,6 @@ type ToUsbChannelSubscriber =
     Subscriber<'static, ThreadModeRawMutex, ToUsbBuf, 4, 1, 1>;
 static TO_USB: ToUsbChannel = PubSubChannel::new();
 
-const TO_UART_BUF_SIZE: usize = 64;
-type ToUartBuffer = [u8; TO_UART_BUF_SIZE];
-type ToUartChannelBuf = [ToUartBuffer; 4];
-
 type ToUartPipe = pipe::Pipe<NoopRawMutex, 256>;
 type ToUartWriter = pipe::Writer<'static, NoopRawMutex, 256>;
 type ToUartReader = pipe::Reader<'static, NoopRawMutex, 256>;
@@ -54,7 +48,7 @@ type ToUartReader = pipe::Reader<'static, NoopRawMutex, 256>;
 async fn main(spawner: Spawner) {
     let board = Board::new();
 
-    let mut to_uart_pipe = static_mut_ref!(ToUartPipe, ToUartPipe::new());
+    let to_uart_pipe = static_mut_ref!(ToUartPipe, ToUartPipe::new());
     let (to_uart_receiver, to_uart_sender) = to_uart_pipe.split();
 
     let uart_tx = board.uart_tx;
@@ -80,11 +74,11 @@ async fn main(spawner: Spawner) {
 #[embassy_executor::task]
 async fn uart_sender(
     mut uart_tx: UartTx<'static, Async>,
-    mut to_uart_sub: ToUartReader,
+    from_usb: ToUartReader,
 ) {
     let mut buf = [0; 256];
     loop {
-        let n = to_uart_sub.read(&mut buf).await;
+        let n = from_usb.read(&mut buf).await;
         let data = &buf[..n];
         if let Err(e) = uart_tx.write(data).await {
             #[cfg(feature = "defmt")]
@@ -150,7 +144,7 @@ async fn usb_receiver(
         'static,
         usb::Driver<'static, peripherals::USB>,
     >,
-    mut to_uart_sender: ToUartWriter,
+    mut to_uart: ToUartWriter,
 ) {
     loop {
         cdc_rx.wait_connection().await;
@@ -158,7 +152,7 @@ async fn usb_receiver(
         loop {
             if let Ok(n) = cdc_rx.read_packet(&mut buf).await {
                 let data = &buf[..n];
-                to_uart_sender.write_all(data).await.unwrap();
+                to_uart.write_all(data).await.unwrap();
             } else {
                 break;
             }
