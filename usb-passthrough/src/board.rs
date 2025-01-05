@@ -79,7 +79,7 @@ impl Board {
 
         let (uart_tx, uart_rx) = {
             let mut config = usart::Config::default();
-            config.baudrate = 115200;
+            config.baudrate = 115_200;
             config.swap_rx_tx = true;
             let uart4 = {
                 Uart::new(
