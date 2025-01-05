@@ -86,7 +86,7 @@ impl Board {
                 .unwrap()
             };
             let (uart_tx, uart_rx) = uart4.split();
-            let rx_buf = Box::leak(Box::new([0u8; 4096]));
+            let rx_buf = Box::leak(Box::new([0u8; 256]));
             let uart_rx = uart_rx.into_ring_buffered(rx_buf);
             (uart_tx, uart_rx)
         };
