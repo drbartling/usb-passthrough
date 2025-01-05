@@ -101,7 +101,7 @@ async fn uart_receiver(
             }
             Err(e) => {
                 #[cfg(feature = "defmt")]
-                error!("UART RX error {:?}", e);
+                error!("UART RX error: `{:?}`", e);
             }
         }
     }
