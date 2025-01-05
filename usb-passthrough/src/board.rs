@@ -1,6 +1,7 @@
 #[cfg(feature = "defmt")]
 use defmt::assert_eq;
 
+use crate::static_mut_ref;
 use embassy_stm32::mode::Async;
 use embassy_stm32::rcc::Sysclk;
 use embassy_stm32::usart::{RingBufferedUartRx, Uart, UartTx};
@@ -10,7 +11,6 @@ use embassy_usb::class::cdc_acm;
 use embassy_usb::class::cdc_acm::CdcAcmClass;
 use embassy_usb::{Builder, UsbDevice};
 use static_cell::StaticCell;
-use crate::static_mut_ref;
 
 bind_interrupts!(struct Irqs {
     USART3_4_5_6_LPUART1 => usart::InterruptHandler<peripherals::USART4>;
@@ -83,7 +83,7 @@ impl Board {
                 .unwrap()
             };
             let (uart_tx, uart_rx) = uart4.split();
-            let rx_buf = static_mut_ref!([u8; 256], [0; 256]);
+            let rx_buf = static_mut_ref!([u8; 1 << 12], [0; 1 << 12]);
             let uart_rx = uart_rx.into_ring_buffered(rx_buf);
             (uart_tx, uart_rx)
         };

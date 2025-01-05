@@ -16,12 +16,10 @@ use embassy_executor::Spawner;
 use embassy_stm32::mode::Async;
 use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
 use embassy_stm32::{peripherals, usb};
-use embassy_sync::blocking_mutex::raw::{NoopRawMutex, ThreadModeRawMutex};
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::pipe;
-use embassy_sync::pubsub::{PubSubChannel, Publisher, Subscriber, WaitResult};
 use embassy_usb::class::cdc_acm;
 use embedded_io_async::Write;
-use heapless::Vec;
 use static_cell::StaticCell;
 
 macro_rules! static_mut_ref {
@@ -32,13 +30,9 @@ macro_rules! static_mut_ref {
 }
 pub(crate) use static_mut_ref;
 
-type ToUsbBuf = Vec<u8, 63>;
-type ToUsbChannel = PubSubChannel<ThreadModeRawMutex, ToUsbBuf, 4, 1, 1>;
-type ToUsbChannelPublisher =
-    Publisher<'static, ThreadModeRawMutex, ToUsbBuf, 4, 1, 1>;
-type ToUsbChannelSubscriber =
-    Subscriber<'static, ThreadModeRawMutex, ToUsbBuf, 4, 1, 1>;
-static TO_USB: ToUsbChannel = PubSubChannel::new();
+type ToUsbPipe = pipe::Pipe<NoopRawMutex, 256>;
+type ToUsbWriter = pipe::Writer<'static, NoopRawMutex, 256>;
+type ToUsbReader = pipe::Reader<'static, NoopRawMutex, 256>;
 
 type ToUartPipe = pipe::Pipe<NoopRawMutex, 256>;
 type ToUartWriter = pipe::Writer<'static, NoopRawMutex, 256>;
@@ -51,16 +45,17 @@ async fn main(spawner: Spawner) {
     let to_uart_pipe = static_mut_ref!(ToUartPipe, ToUartPipe::new());
     let (to_uart_receiver, to_uart_sender) = to_uart_pipe.split();
 
+    let to_usb_pipe = static_mut_ref!(ToUsbPipe, ToUsbPipe::new());
+    let (to_usb_receiver, to_usb_sender) = to_usb_pipe.split();
+
     let uart_tx = board.uart_tx;
     spawner.must_spawn(uart_sender(uart_tx, to_uart_receiver));
 
     let usb_cdc_tx = board.usb_cdc_tx;
-    let to_pc_sub = TO_USB.subscriber().unwrap();
-    spawner.must_spawn(usb_sender(usb_cdc_tx, to_pc_sub));
+    spawner.must_spawn(usb_sender(usb_cdc_tx, to_usb_receiver));
 
     let uart_rx = board.uart_rx;
-    let to_pc_pub = TO_USB.publisher().unwrap();
-    spawner.must_spawn(uart_receiver(uart_rx, to_pc_pub));
+    spawner.must_spawn(uart_receiver(uart_rx, to_usb_sender));
 
     let usb_cdc_rx = board.usb_cdc_rx;
     spawner.must_spawn(usb_receiver(usb_cdc_rx, to_uart_sender));
@@ -90,15 +85,15 @@ async fn uart_sender(
 #[embassy_executor::task]
 async fn uart_receiver(
     mut uart_rx: RingBufferedUartRx<'static>,
-    to_usb_pub: ToUsbChannelPublisher,
+    mut to_usb: ToUsbWriter,
 ) {
     let mut buf = [0; 63];
     loop {
         let result = uart_rx.read(&mut buf).await;
         match result {
             Ok(n) => {
-                let data: ToUsbBuf = buf[..n].try_into().unwrap();
-                to_usb_pub.publish(data).await;
+                let data = &buf[..n];
+                to_usb.write_all(data).await.unwrap();
             }
             Err(e) => {
                 #[cfg(feature = "defmt")]
@@ -114,25 +109,18 @@ async fn usb_sender(
         'static,
         usb::Driver<'static, peripherals::USB>,
     >,
-    mut to_usb_sub: ToUsbChannelSubscriber,
+    from_uart: ToUsbReader,
 ) {
     loop {
         cdc_tx.wait_connection().await;
+        let mut buf = [0; 63];
         loop {
-            let buf = match to_usb_sub.next_message().await {
-                WaitResult::Lagged(n) => {
-                    #[cfg(feature = "defmt")]
-                    error!("Missed {:?} packets to send to the payload", n);
-                    None
-                }
-                WaitResult::Message(buf) => Some(buf),
-            };
-            if let Some(buf) = buf {
-                if let Err(e) = cdc_tx.write_packet(&buf).await {
-                    #[cfg(feature = "defmt")]
-                    error!("CDC TX err: {:?}", e);
-                    break;
-                }
+            let n = from_uart.read(&mut buf).await;
+            let data = &buf[..n];
+            if let Err(e) = cdc_tx.write_packet(data).await {
+                #[cfg(feature = "defmt")]
+                error!("CDC TX err: {:?}", e);
+                break;
             }
         }
     }
