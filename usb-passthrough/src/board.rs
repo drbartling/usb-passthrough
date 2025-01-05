@@ -10,18 +10,12 @@ use embassy_usb::class::cdc_acm;
 use embassy_usb::class::cdc_acm::CdcAcmClass;
 use embassy_usb::{Builder, UsbDevice};
 use static_cell::StaticCell;
+use crate::static_mut_ref;
 
 bind_interrupts!(struct Irqs {
     USART3_4_5_6_LPUART1 => usart::InterruptHandler<peripherals::USART4>;
     USB_UCPD1_2 => usb::InterruptHandler<peripherals::USB>;
 });
-
-macro_rules! static_mut_ref {
-    ($t:ty, $i:expr) => {{
-        static CELL: StaticCell<$t> = StaticCell::new();
-        CELL.init($i)
-    }};
-}
 
 pub struct Board {
     pub usb: UsbDevice<'static, usb::Driver<'static, peripherals::USB>>,
