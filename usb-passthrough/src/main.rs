@@ -12,12 +12,17 @@ use panic_halt as _;
 use {defmt_rtt as _, panic_probe as _};
 
 use board::Board;
+use board::Led;
 use embassy_executor::Spawner;
+use embassy_futures::select::select;
 use embassy_stm32::mode::Async;
 use embassy_stm32::usart::{RingBufferedUartRx, UartTx};
 use embassy_stm32::{peripherals, usb};
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::pipe;
+use embassy_sync::blocking_mutex::raw::{
+    CriticalSectionRawMutex, NoopRawMutex,
+};
+use embassy_sync::watch::Watch;
+use embassy_sync::{pipe, watch};
 use embassy_usb::class::cdc_acm;
 use embedded_io_async::Write;
 use static_cell::StaticCell;
@@ -38,6 +43,20 @@ type ToUartPipe = pipe::Pipe<NoopRawMutex, 256>;
 type ToUartWriter = pipe::Writer<'static, NoopRawMutex, 256>;
 type ToUartReader = pipe::Reader<'static, NoopRawMutex, 256>;
 
+type UsbRxWatch = Watch<CriticalSectionRawMutex, UsbRxState, 1>;
+type UsbRxSender =
+    watch::Sender<'static, CriticalSectionRawMutex, UsbRxState, 1>;
+type UsbRxReceiver =
+    watch::Receiver<'static, CriticalSectionRawMutex, UsbRxState, 1>;
+static USB_RX_WATCH: UsbRxWatch = Watch::new();
+
+type UartRxWatch = Watch<CriticalSectionRawMutex, UartRxState, 1>;
+type UartRxSender =
+    watch::Sender<'static, CriticalSectionRawMutex, UartRxState, 1>;
+type UartRxReceiver =
+    watch::Receiver<'static, CriticalSectionRawMutex, UartRxState, 1>;
+static UART_RX_WATCH: UartRxWatch = Watch::new();
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let board = Board::new();
@@ -55,10 +74,25 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(usb_sender(usb_cdc_tx, to_usb_receiver));
 
     let uart_rx = board.uart_rx;
-    spawner.must_spawn(uart_receiver(uart_rx, to_usb_sender));
+    spawner.must_spawn(uart_receiver(
+        uart_rx,
+        to_usb_sender,
+        UART_RX_WATCH.sender(),
+    ));
 
     let usb_cdc_rx = board.usb_cdc_rx;
-    spawner.must_spawn(usb_receiver(usb_cdc_rx, to_uart_sender));
+    spawner.must_spawn(usb_receiver(
+        usb_cdc_rx,
+        to_uart_sender,
+        USB_RX_WATCH.sender(),
+    ));
+
+    let led = board.led;
+    spawner.must_spawn(show_activity(
+        led,
+        USB_RX_WATCH.receiver().unwrap(),
+        UART_RX_WATCH.receiver().unwrap(),
+    ));
 
     let mut usb = board.usb;
     loop {
@@ -86,12 +120,15 @@ async fn uart_sender(
 async fn uart_receiver(
     mut uart_rx: RingBufferedUartRx<'static>,
     mut to_usb: ToUsbWriter,
+    uart_state: UartRxSender,
 ) {
     let mut buf = [0; 63];
     loop {
+        uart_state.send(UartRxState::Idle);
         let result = uart_rx.read(&mut buf).await;
         match result {
             Ok(n) => {
+                uart_state.send(UartRxState::Receiving);
                 let data = &buf[..n];
                 to_usb.write_all(data).await.unwrap();
             }
@@ -133,12 +170,16 @@ async fn usb_receiver(
         usb::Driver<'static, peripherals::USB>,
     >,
     mut to_uart: ToUartWriter,
+    usb_rx_state: UsbRxSender,
 ) {
     loop {
+        usb_rx_state.send(UsbRxState::Disconnected);
         cdc_rx.wait_connection().await;
         let mut buf = [0; 64];
         loop {
+            usb_rx_state.send(UsbRxState::Connected);
             if let Ok(n) = cdc_rx.read_packet(&mut buf).await {
+                usb_rx_state.send(UsbRxState::Receiving);
                 let data = &buf[..n];
                 to_uart.write_all(data).await.unwrap();
             } else {
@@ -146,4 +187,41 @@ async fn usb_receiver(
             }
         }
     }
+}
+
+#[embassy_executor::task]
+async fn show_activity(
+    mut led: Led,
+    mut usb_rx_receiver: UsbRxReceiver,
+    mut uart_rx_receiver: UartRxReceiver,
+) {
+    led.on();
+    loop {
+        let _ =
+            select(usb_rx_receiver.changed(), uart_rx_receiver.changed()).await;
+        let usb_rx_state = usb_rx_receiver.get().await;
+        let uart_rx_state = uart_rx_receiver.get().await;
+        match usb_rx_state {
+            UsbRxState::Disconnected => led.off(),
+            UsbRxState::Connected => led.on(),
+            UsbRxState::Receiving => led.blink().await,
+        }
+        match uart_rx_state {
+            UartRxState::Idle => {}
+            UartRxState::Receiving => led.blink().await,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+enum UsbRxState {
+    Disconnected,
+    Connected,
+    Receiving,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+enum UartRxState {
+    Idle,
+    Receiving,
 }
